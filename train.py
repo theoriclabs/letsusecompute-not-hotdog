@@ -30,6 +30,11 @@ image = compute.Image.cuda_pytorch().pip_install(
     "Pillow",
 )
 
+# Optional: `compute secrets set hf <token>` injects env `hf`. Used only when
+# push_to_hub=True. Not required to train on the public dataset.
+# (Do not put Secret.from_name in @app.function — that would force every reader
+# to create a secret just to train.)
+
 DEFAULT_DATASET = "theoriclabs/hot-dog-not-hot-dog"
 FALLBACK_DATASET = "ethz/food101"
 WORKLOAD_SUBDIR = "not-hotdog"
@@ -287,16 +292,20 @@ def train(
 
     hub_url = None
     if push_to_hub:
-        from huggingface_hub import HfApi
+        try:
+            from huggingface_hub import HfApi
 
-        api = HfApi()
-        api.create_repo(hub_repo, exist_ok=True, private=False)
-        api.upload_file(
-            path_or_fileobj=str(weights_path),
-            path_in_repo="model.pt",
-            repo_id=hub_repo,
-        )
-        hub_url = f"https://huggingface.co/{hub_repo}"
+            api = HfApi()
+            api.create_repo(hub_repo, exist_ok=True, private=False)
+            api.upload_file(
+                path_or_fileobj=str(weights_path),
+                path_in_repo="model.pt",
+                repo_id=hub_repo,
+            )
+            hub_url = f"https://huggingface.co/{hub_repo}"
+        except Exception as err:  # noqa: BLE001 — publish is optional; keep weights via artifacts
+            print(f"push_to_hub failed: {err}", flush=True)
+            hub_url = None
 
     return {
         "ok": True,
