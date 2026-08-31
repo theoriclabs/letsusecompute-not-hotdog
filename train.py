@@ -129,17 +129,16 @@ def _tiny_cnn(num_classes: int = 2):
 
 def _load_binary_dataset(dataset_id: str, max_train: int, max_test: int):
     from datasets import load_dataset
+    from huggingface_hub.errors import RepositoryNotFoundError
 
     try:
         ds = load_dataset(dataset_id)
-        train = ds["train"]
-        test = ds["test"] if "test" in ds else ds["validation"]
-        # Expect columns image + label (0=hot_dog, 1=not_hot_dog) or ClassLabel names.
-        return train.select(range(min(len(train), max_train))), test.select(
-            range(min(len(test), max_test))
-        ), dataset_id
-    except Exception:
-        # Fallback: Food-101 → binary. hot_dog vs a fixed sample of other classes.
+    except (RepositoryNotFoundError, FileNotFoundError, OSError) as err:
+        # Only fall back when the preferred repo is missing — never on network
+        # blips mid-download of a huge Food-101 pull.
+        if dataset_id == FALLBACK_DATASET:
+            raise
+        print(f"dataset {dataset_id!r} unavailable ({err}); falling back to {FALLBACK_DATASET}", flush=True)
         food = load_dataset(FALLBACK_DATASET)
         hot_dog_id = food["train"].features["label"].str2int("hot_dog")
 
@@ -150,8 +149,9 @@ def _load_binary_dataset(dataset_id: str, max_train: int, max_test: int):
             }
 
         train_all = food["train"].map(to_binary, remove_columns=food["train"].column_names)
-        test_all = food["validation"].map(to_binary, remove_columns=food["validation"].column_names)
-        # Balance: take all hot_dog then equal not_hot_dog.
+        test_all = food["validation"].map(
+            to_binary, remove_columns=food["validation"].column_names
+        )
         train_hot = [i for i, y in enumerate(train_all["label"]) if y == 0][: max_train // 2]
         train_not = [i for i, y in enumerate(train_all["label"]) if y == 1][: max_train // 2]
         test_hot = [i for i, y in enumerate(test_all["label"]) if y == 0][: max_test // 2]
@@ -159,6 +159,12 @@ def _load_binary_dataset(dataset_id: str, max_train: int, max_test: int):
         train = train_all.select(train_hot + train_not)
         test = test_all.select(test_hot + test_not)
         return train, test, FALLBACK_DATASET
+
+    train = ds["train"]
+    test = ds["test"] if "test" in ds else ds["validation"]
+    return train.select(range(min(len(train), max_train))), test.select(
+        range(min(len(test), max_test))
+    ), dataset_id
 
 
 @app.function(
