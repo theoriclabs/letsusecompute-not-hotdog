@@ -54,6 +54,15 @@ compute artifacts list <run_id>
 compute artifacts get <run_id> <artifact_id> <version> --out ./weights
 ```
 
+5. Optional — publish the checkpoint to Hugging Face. The token must be stored **and** referenced:
+
+```bash
+compute secrets set hf
+compute run train.py::train_and_push --gpu cheap --provider vastai --timeout 1200 --wait
+```
+
+`train` does not request the secret, so readers can train on the public dataset without an HF token. `train_and_push` lists `secrets=[Secret.from_name("hf")]`; without that declaration the stored secret is never injected.
+
 ## Suggested prompt
 
 ```
@@ -68,7 +77,8 @@ After success, list and download artifacts.
 
 ## Notes
 
-- Public dataset: no HF token required to train.
+- Public dataset: no HF token required to train (`train.py::train`).
+- Hub publish needs `compute secrets set hf` plus `train.py::train_and_push`.
 - To train longer: raise `epochs` and `--timeout` (max 24h). You pay for billed minutes.
 - Data lives on Hugging Face, not on compute. Machines are ephemeral.
 - No wandb in this guide. No hosted inference API in this guide.

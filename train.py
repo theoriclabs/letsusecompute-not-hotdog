@@ -30,10 +30,9 @@ image = compute.Image.cuda_pytorch().pip_install(
     "Pillow",
 )
 
-# Optional: `compute secrets set hf <token>` injects env `hf`. Used only when
-# push_to_hub=True. Not required to train on the public dataset.
-# (Do not put Secret.from_name in @app.function — that would force every reader
-# to create a secret just to train.)
+# Stored with `compute secrets set hf`. Injected only when a function lists
+# `secrets=[hf_secret]`. Training the public dataset does not need it.
+hf_secret = compute.Secret.from_name("hf")
 
 DEFAULT_DATASET = "theoriclabs/hot-dog-not-hot-dog"
 FALLBACK_DATASET = "ethz/food101"
@@ -172,22 +171,18 @@ def _load_binary_dataset(dataset_id: str, max_train: int, max_test: int):
     ), dataset_id
 
 
-@app.function(
-    gpu="RTX-3090",
-    image=image,
-    timeout=1200,
-)
-def train(
-    epochs: int = 5,
-    batch_size: int = 32,
-    lr: float = 1e-3,
-    image_size: int = 128,
-    max_train: int = 498,
-    max_test: int = 500,
-    dataset_id: str = DEFAULT_DATASET,
-    seed: int = 0,
-    push_to_hub: bool = False,
-    hub_repo: str = "theoriclabs/not-hotdog-cnn",
+def _train_impl(
+    *,
+    epochs: int,
+    batch_size: int,
+    lr: float,
+    image_size: int,
+    max_train: int,
+    max_test: int,
+    dataset_id: str,
+    seed: int,
+    push_to_hub: bool,
+    hub_repo: str,
 ) -> dict:
     """Train the Not Hotdog CNN and write weights as a compute artifact."""
     import torch
@@ -325,6 +320,71 @@ def train(
         "hub_url": hub_url,
         "torch": torch.__version__,
     }
+
+
+@app.function(
+    gpu="RTX-3090",
+    image=image,
+    timeout=1200,
+)
+def train(
+    epochs: int = 5,
+    batch_size: int = 32,
+    lr: float = 1e-3,
+    image_size: int = 128,
+    max_train: int = 498,
+    max_test: int = 500,
+    dataset_id: str = DEFAULT_DATASET,
+    seed: int = 0,
+    push_to_hub: bool = False,
+    hub_repo: str = "theoriclabs/not-hotdog-cnn",
+) -> dict:
+    """Train only. No Hugging Face token required."""
+    return _train_impl(
+        epochs=epochs,
+        batch_size=batch_size,
+        lr=lr,
+        image_size=image_size,
+        max_train=max_train,
+        max_test=max_test,
+        dataset_id=dataset_id,
+        seed=seed,
+        push_to_hub=push_to_hub,
+        hub_repo=hub_repo,
+    )
+
+
+@app.function(
+    gpu="RTX-3090",
+    image=image,
+    timeout=1200,
+    secrets=[hf_secret],
+)
+def train_and_push(
+    epochs: int = 5,
+    batch_size: int = 32,
+    lr: float = 1e-3,
+    image_size: int = 128,
+    max_train: int = 498,
+    max_test: int = 500,
+    dataset_id: str = DEFAULT_DATASET,
+    seed: int = 0,
+    push_to_hub: bool = True,
+    hub_repo: str = "theoriclabs/not-hotdog-cnn",
+) -> dict:
+    """Same train, then upload ``model.pt`` using the stored ``hf`` secret."""
+    return _train_impl(
+        epochs=epochs,
+        batch_size=batch_size,
+        lr=lr,
+        image_size=image_size,
+        max_train=max_train,
+        max_test=max_test,
+        dataset_id=dataset_id,
+        seed=seed,
+        push_to_hub=push_to_hub,
+        hub_repo=hub_repo,
+    )
 
 
 if __name__ == "__main__":

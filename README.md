@@ -17,6 +17,15 @@ compute run train.py::train --gpu cheap --provider vastai --timeout 1200 --wait
 
 `--dry-run` only prints the upload plan. Cost and GPU show up on the real run, in the preflight quote, before you confirm spend.
 
+To publish weights to Hugging Face, store a write token and use the secrets-backed entrypoint:
+
+```bash
+compute secrets set hf
+compute run train.py::train_and_push --gpu cheap --provider vastai --timeout 1200 --wait
+```
+
+`compute secrets set hf` stores the token. `Secret.from_name("hf")` on `train_and_push` is what injects it into the job. Storing the secret alone does not put it on the machine.
+
 After the run succeeds and the machine is gone:
 
 ```bash
